@@ -31,9 +31,10 @@ raw_extension_set = {ext.lower() for ext in raw_extensions}
 
 # test values
 # Source directory where photos are stored
-Source_list = ['/Users/andrew/Desktop', '/Users/andrew/Downloads', '/Users/andrew/Printrun']
+#pic a test source or a 'real' network one by comments
+Source_list = ['/Users/andrew/Desktop', '/Users/andrew/Downloads', '/Users/andrew/Printrun', '/Users/andrew/Documents']
 #Source_list = ['/Users/andrew/Desktop/Test Folder For Images','/Volumes/media1/Pictures/Photos','/Volumes/media1/Pictures/Images removed from Photo library vault']
-max_producer_threads = 2
+max_producer_threads = 4
 
 def print_image_data_cache(image_data_cache_local):
     if not image_data_cache_local:
@@ -73,13 +74,13 @@ def count_directories(directoryqueue, root_directory):
         for dir_name in dirs:
             dir_path = os.path.join(current_root, dir_name)
             directoryqueue.put(dir_path)
-            # print(f'Added Directory: {dir_path}')
+            logging.debug(f'Added Directory: {dir_path}')
     #print (f'Dir count {count}')
     return count
 
 
 def find_images(temp_dir, data_cache_lock):
-    logging.debug(f"Searching: {temp_dir}")
+    #logging.debug(f"Searching: {temp_dir}")
 
     if os.path.exists(temp_dir):
         image_flag = False
@@ -114,7 +115,7 @@ def start_image_search(directoryqueue, data_cache_lock):
         while not sentinel_encountered:
             try:
                 temp_dir = directory_path_Q.get_nowait()
-                logging.debug(f'popped {temp_dir}')
+                #logging.debug(f'popped {temp_dir}')
                 if temp_dir is None:
                     sentinel_encountered = True
                     continue
@@ -128,7 +129,7 @@ def start_image_search(directoryqueue, data_cache_lock):
     
 def start():
     master_list = []
-
+    Starttime = time.time()
     #Source_dir_Q = queue.Queue
 
     # while not Source_dir_Q.empty():
@@ -148,7 +149,10 @@ def start():
             producer_threads.append(producer_thread)
             logging.debug(f'producer thread count: {len(producer_threads)}')
 
+
     # Starting Consumer Threads
+    time.sleep(1) #give the producer threads a chance to get ahead enough
+                # the get_nowait() in the consumer threading starter throws an error that isn't caught by try:
     consumer_threads = []
     num_consumer_threads = max_threads  # or any number you prefer
     for _ in range(num_consumer_threads):
