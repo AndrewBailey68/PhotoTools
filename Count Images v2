@@ -1,13 +1,13 @@
 import os
-import tkinter as tk
+#import tkinter as tk
 from concurrent.futures import ThreadPoolExecutor
 import queue
 import threading
 import time
 
 Starttime = time.time()
-
-max_threads = 4  # Set the maximum number of threads
+maxthreadlist = [6]
+max_threads = 2  # Set the maximum number of threads
 thread_pool = ThreadPoolExecutor(max_threads)
 
 # Globals
@@ -27,14 +27,11 @@ raw_extension_set = {ext.lower() for ext in raw_extensions}
 
 # test values
 # Source directory where photos are stored
-source_dir = '/Users/andrew/Desktop/Test Folder For Images'
-source_dir = '/Users/andrew/Downloads/'
-if not os.path.exists(source_dir):
-    print("Path not found")
+Source_list = ['/Users/andrew/Desktop/Test Folder For Images','/Volumes/media1/Pictures/Photos','/Volumes/media1/Pictures/Images removed from Photo library vault']
 
-
+# enumerate directories into global Q
 def count_directories(root_directory):
-    print("Function: Count Directories")
+    #print("Function: Count Directories")
     count = 0
     for current_root, dirs, _ in os.walk(root_directory):
         count += len(dirs)
@@ -42,13 +39,12 @@ def count_directories(root_directory):
             dir_path = os.path.join(current_root, dir_name)
             directory_path_Q.put(dir_path)
             # print(f'Added Directory: {dir_path}')
-    print (f'Dir count {count}')
+    #print (f'Dir count {count}')
     return count
 
 
 def find_images(temp_dir):
     #print(f'Image Search Started: {temp_dir}')
-
     if os.path.exists(temp_dir):
         image_flag = False
         for filename in os.listdir(temp_dir):
@@ -57,47 +53,74 @@ def find_images(temp_dir):
             #if os.path.isfile(file_path) and (file_path.lower() in image_extensions_set):
                 if file_path.lower().endswith(tuple(image_extensions)):
                     image_data_cache.append(
-                        {'filename': filename, 'path': temp_dir})
+                        {'filename': filename, 'path': temp_dir, 'size':os.path.getsize(file_path), 'type': file_path.lower})
                     image_flag = True  # found at least one image
         if image_flag:
             image_directory_list.append(temp_dir)
-    # print(f'Image Search Ended: {temp_dir}')
+    #print(f'Image Search Ended: {image_flag} in {temp_dir} ')
+    return image_flag
 
-def worker_find_images():
-        try:
-            temp_dir = directory_path_Q.get_nowait()
-        except queue.Empty:
-            return # Break the loop if queue is empty
-        find_images(temp_dir)
-    #print("Image searching worker completed its task.")
-
-def print_image_data_cache(image_data_cache):
-    if not image_data_cache:
+def print_image_data_cache(image_data_cache_local):
+    if not image_data_cache_local:
         print("Image data cache is empty.")
     else:
         print("Image Data Cache:")
-        for idx, data in enumerate(image_data_cache, start=1):
-            print("\n".join([f"Filename: {data['filename']}, Path: {data['path']}"]))
+        # for idx, data in enumerate(image_data_cache, start=1):
+        #     print("\n".join([f"Filename: {data['filename']}, Path: {data['path']}"]))
+    total_size = sum(data.get('size', 0) for data in image_data_cache_local)
+    total_size_megabytes = total_size / (1024 * 1024)  # Convert bytes to megabytes
+    formatted_size = '{:,.2f}'.format(total_size_megabytes)  # Format with commas and 2 decimal places
+    print(f'Total size of image files: {formatted_size} MB')
+
+# Create a dictionary to store unique image data based on filename and size
+def deduplicate_image_cache(image_data_to_dedupe):
+    unique_image_data = {}
+    for data in image_data_to_dedupe:
+        filename = data.get('filename')
+        size = data.get('image_size')
+        key = (filename, size)
+
+        # Check if the key is already in the dictionary
+        if key not in unique_image_data:
+            unique_image_data[key] = data
+
+    # Convert the dictionary values back to a list
+    deduplicated_image_data = list(unique_image_data.values())
+    return deduplicated_image_data
 
 
-# Start background task
+# Start
 def start_image_search():
-    with ThreadPoolExecutor(max_threads) as executor:
-    # Starting a separate thread to count and queue directories
-        count_directories_thread = executor.submit(count_directories, source_dir)
-    # Starting worker threads to find images in parallel
-        while not (directory_path_Q.empty() and count_directories_thread.done()):
-            executor.submit(worker_find_images)
-
-
+    with ThreadPoolExecutor(max_workers = max_threads) as executor:
+        while not(directory_path_Q.empty()):
+            try:  # Add try...except block to catch any unexpected errors
+                temp_dir = directory_path_Q.get()
+                #print (f'Got {temp_dir}')
+                future = executor.submit(find_images, temp_dir)
+                #print (future.result())
+            except Exception as e:
+                print(f"Error in start_image_search while loop: {str(e)}")
+            
     print_image_data_cache(image_data_cache)
     print (f'found {len(image_data_cache)} images')
-    print("Image search complete!")
+    
 
-
-# Using a thread to avoid freezing the Tkinter GUI
-start_image_search()
-
-ElapsedTime = time.time() - Starttime
-
-print(f'Elapsed time {ElapsedTime}')
+master_list = []
+for source_dir in Source_list:
+    if not os.path.exists(source_dir):
+        print("Path not found")
+    count = count_directories(source_dir)
+    
+    
+    for n in maxthreadlist:
+        Starttime = time.time()
+        max_threads = n
+        start_image_search()
+        print_image_data_cache(image_data_cache)
+        for image_data in image_data_cache:
+            master_list.extend(image_data_cache)
+        
+    master_list = deduplicate_image_cache(master_list)
+    print_image_data_cache(master_list)
+    ElapsedTime = time.time() - Starttime
+    print(f'{n} Threads : {ElapsedTime} s')
