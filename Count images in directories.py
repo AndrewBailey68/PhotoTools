@@ -16,7 +16,10 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import Listbox, ttk
 from tkinter import filedialog
-from tqdm import tqdm
+import threading
+from multiprocessing.dummy import Pool as ThreadPool
+import queue
+
 
 # Source directory where photos are stored
 source_dir = '/Volumes/media1/Pictures/Photos/'
@@ -27,9 +30,10 @@ if not os.path.exists(source_dir):
 destination_dir = '/path/to/destination/directory'
 
 display_time_ms = 1
-directory_paths = [source_dir]
+directory_paths = queue.Queue()  # global to contain temp list
 image_number = 0
 image_data_cache = []
+image_directory_list = []  # list to hold directories with images
 
 image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.cr2', '.raw']
 cv2_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
@@ -40,9 +44,11 @@ image_extensions_set = {ext.lower() for ext in image_extensions}
 cv2_extensions_set = {ext.lower() for ext in cv2_extensions}
 raw_extension_set = {ext.lower() for ext in raw_extensions}
 
+# Threads limited to 3
+pool = ThreadPool(3)  # not used
+
+
 # Function to add image data to the cache
-
-
 def cache_image_data(filename, path, image_size, image_type):
     image_data_cache.append({'filename': filename, 'path': path,
                             'image_size': image_size, 'image_type': image_type})
@@ -75,13 +81,22 @@ def load_data_to_cache():
 # ===============================================
 
 # Function to count directories recursively
+# Designed to be threaded - puts output into a global variable
+# could be improved by taking the global variable in function call
+# and using that here to make explicit the function's use of a global
 
 
 def count_directories(root_directory):
+    print("f (count directories)")
     count = 0
     for _, dirs, _ in os.walk(root_directory):
         count += len(dirs)
+        for dir_name in dirs:
+            dir_path = os.path.join(root_directory, dir_name)
+            directory_paths.put(dir_path)
+            print(f'd+ {dir_path}')
     return count
+# ===============================================
 
 
 def is_image_file(file_path):
@@ -107,43 +122,74 @@ def count_image_files(directory):
 
 def isValInLst(val, lst):
     return bool([index for index, content in enumerate(lst) if val in content])
+# ===============================================
+
+# designed to be threaded
+# takes the files in a directory and determines whether they are images or not
+# if they are - add to image list
+# if there are images - add dir to image_directory_list
 
 
-def find_image_directories(root_directory):
-    image_directories = []
-    total_dirs = count_directories(root_directory)
-    pbar = tqdm(total=total_dirs, desc="Scanning Directories", unit="dir")
-
-    for root, dirs, _ in os.walk(root_directory):
-        for dir_name in dirs:
-            try:
-                # print(dir_name)
-                dir_path = os.path.join(root, dir_name)
-                # Check if the directory contains at least one image file
-                image_count = count_image_files(dir_path)
-                if image_count > 0:
-                    image_directories.append((dir_path, image_count))
-            except:
-                print("Caught an error")
-    # Time to cache the data
-            pbar.update(1)
-
-    return image_directories
+def find_images(temp_dir):
+    """
+    Find and cache image details from the specified directory.
+    
+    Parameters:
+    - temp_dir (str): The directory path to search for images.
+    """
+    print(f'+Image thread started {temp_dir}')
+    
+    if os.path.exists(temp_dir):
+        image_flag = False
+        for filename in os.listdir(temp_dir):
+            file_path = os.path.join(temp_dir, filename)
+            if os.path.isfile(file_path) and file_path.lower().endswith(tuple(image_extensions)):
+                image_data_cache.append({'filename': filename, 'path': temp_dir})
+                image_flag = True 
+                
+        if image_flag:
+            image_directory_list.append(temp_dir)
+            
+    print(f' - Image thread ended {temp_dir}')
+    return
 # ===============================================
 
 
 def update_directory_list():
     root_source_dir = filedialog.askdirectory(title="Select Root Directory")
     if root_source_dir:
-        image_directories_tuple = []
-        image_directories_tuple = find_image_directories(root_source_dir)
-        # Global variable to store all the directories we have images in
-        listbox.delete(0, tk.END)  # Clear the listbox
-        for directory_tuple in image_directories_tuple:
-            directory, image_count = directory_tuple
-            listbox.insert(tk.END, f"{directory} ({image_count} images")
-            directory_paths.append(directory)
-# ===============================================
+        # Start the dir tree search thread
+        result = count_directories(root_source_dir)
+        print(f'dir count {result}')
+
+# Scan thread is running
+# Now take the contents of the current list and copy to a new list
+    print(f'dir path queue size ', directory_paths.qsize())
+    while directory_paths.not_empty:
+        print(
+            f'not empty {directory_paths.not_empty} {directory_paths.qsize()}')
+        temp_dir = directory_paths.get()
+        print(f'got path {temp_dir}')
+        print(f'queue size now f{directory_paths.qsize()}')
+        try:
+            print(f'Attempting thread start {temp_dir}')
+            x = threading.Thread(target=find_images,
+                                 args=(temp_dir))
+            x.start()
+        except RuntimeError:  # a RuntimeError
+            print(f'error thread start {temp_dir}')
+            break
+
+
+#         image_directories_tuple = []
+
+#         # Global variable to store all the directories we have images in
+#         listbox.delete(0, tk.END)  # Clear the listbox
+#         for directory_tuple in image_directories_tuple:
+#             directory, image_count = directory_tuple
+#             listbox.insert(tk.END, f"{directory} ({image_count} images")
+#             directory_paths.append(directory)
+# # ===============================================
 
 # Function to resize the listbox if the window size changes
 
@@ -152,6 +198,7 @@ def resize_listbox(event):
     # Adjust height and width as needed
     listbox.config(height=(event.height // 20), width=(event.width // 20))
 # ===============================================
+
 # Function to display images from the selected directory
 
 
