@@ -5,10 +5,11 @@ import queue
 import threading
 import time
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
-maxthreadlist = [6,5,7,4]
+maxthreadlist = [6]
 
+waittime = 0.05
 Starttime = time.time()
 
 max_producer_threads = 4
@@ -37,7 +38,7 @@ raw_extension_set = {ext.lower() for ext in raw_extensions}
 # Source directory where photos are stored
 #pic a test source or a 'real' network one by comments
 Source_list=['/Users/andrew/Desktop/Test Folder For Images']
-Source_list = ['/Users/andrew/Desktop', '/Users/andrew/Downloads', '/Users/andrew/Printrun', '/Users/andrew/Documents']
+#Source_list = ['/Users/andrew/Desktop', '/Users/andrew/Downloads', '/Users/andrew/Printrun', '/Users/andrew/Documents']
 #Source_list = ['/Users/andrew/Desktop/Test Folder For Images','/Volumes/media1/Pictures/Photos','/Volumes/media1/Pictures/Images removed from Photo library vault']
 
 
@@ -47,19 +48,21 @@ def can_access(path):
 
 def print_image_data_cache(image_data_cache_local):
     if not image_data_cache_local:
-        print("Image data cache is empty.")
+        logging.debug ("finishing up - Image data cache is empty")
     else:
-        print("Image Data Cache:")
-        # for idx, data in enumerate(image_data_cache, start=1):
-        #     print("\n".join([f"Filename: {data['filename']}, Path: {data['path']}"]))
+        logging.debug("Image Data Cache:")
+        if logging.DEBUG:
+            for idx, data in enumerate(image_data_cache, start=1):
+                logging.debug("\n".join([f"Filename: {data['filename']}, Path: {data['path']}"]))
     total_size = sum(data.get('size', 0) for data in image_data_cache_local)
     total_size_megabytes = total_size / (1024 * 1024)  # Convert bytes to megabytes
     formatted_size = '{:,.2f}'.format(total_size_megabytes)  # Format with commas and 2 decimal places
-    print(f'Total size of image files: {formatted_size} MB')
+    logging.info(f'Total size of image files: {formatted_size} MB')
 
 # Create a dictionary to store unique image data based on filename and size
 def deduplicate_image_cache(image_data_to_dedupe):
     unique_image_data = {}
+    logging.info (f'Dedupe {len(image_data_to_dedupe)} images')
     for data in image_data_to_dedupe:
         filename = data.get('filename')
         size = data.get('image_size')
@@ -71,11 +74,11 @@ def deduplicate_image_cache(image_data_to_dedupe):
 
     # Convert the dictionary values back to a list
     deduplicated_image_data = list(unique_image_data.values())
+    logging.info (f'Now {len(deduplicated_image_data)} images')
     return deduplicated_image_data
 
 # enumerate directories into global Q
 def count_directories(directoryqueue, root_directory):
-    #print("Function: Count Directories")
     count = 0
     for current_root, dirs, _ in os.walk(root_directory):
         count += len(dirs)
@@ -83,7 +86,7 @@ def count_directories(directoryqueue, root_directory):
             dir_path = os.path.join(current_root, dir_name)
             directoryqueue.put(dir_path)
             logging.debug(f'Added Directory: {dir_path}')
-    #print (f'Dir count {count}')
+    logging.debug (f'Dir count {count} from {root_directory}')
     return count
 
 def directory_search(source_dir_path):
@@ -93,17 +96,16 @@ def process_directory(directory_path, data_cache_lock):
     # Logic to process a directory and find images
     # Utilizing the previously defined find_images function
     # Returns: found data
-    return find_images(directory_path, data_cache_lock)
+    return find_images(directory_path)
 
-
-def find_images(temp_dir, data_cache_lock):
-    #logging.debug(f"Searching: {temp_dir}")
+def find_images(temp_dir, threadlock_ref):
+    logging.debug(f"Searching: {temp_dir}")
     if os.path.exists(temp_dir):    #check the path exists
         if can_access(temp_dir):    #check we have rights to access directory
             try:
                 os.listdir(temp_dir)    #list what's in the directory
             except:
-                logging.debug (f'Err:Find Images:Listing {temp_dir}')
+                logging.warning (f'Err:Find Images:Listing {temp_dir}')
                 return (f'Fail {temp_dir}')
             image_flag= False   #set flag to false before the file scan
             try:
@@ -112,27 +114,27 @@ def find_images(temp_dir, data_cache_lock):
                     if not(os.path.isdir(file_path)) and can_access(temp_dir):
                     #if os.path.isfile(file_path) and (file_path.lower() in image_extensions_set)
                         if file_path.lower().endswith(tuple(image_extensions)):
-                            with data_cache_lock:
+                            with threadlock_ref:
                                 #logging.debug(f"Appending data to cache: {filename}")
                                 image_data_cache.append(
                                     {'filename': filename, 'path': temp_dir, 'size':os.path.getsize(file_path), 'type': file_path.lower})
-                                #logging.debug(f"Appended data to cache: {filename}")
+                                logging.debug(f"Appended data to cache: {filename}")
                             image_flag = True  # found at least one image
                     else:   #it's a directory move on
                         pass        
-                logging.debug(f'Image Search Ended {image_flag} in {temp_dir}')
+                #logging.debug(f'Image Search Ended {image_flag} in {temp_dir}')
                 return (f'Success {temp_dir}')
             except:
-                logging.debug ('Err:Find images')
+                logging.warning ('Err:Find images')
                 return (f'fail {temp_dir}')
         else:
-            logging.debug (f'Err:Find Images:No Access to {temp_dir}')
+            logging.warning (f'Err:Find Images:No Access to {temp_dir}')
             return (f'no access: {temp_dir}')
     else:
-        logging.debug (f'Err:Find Images:no path {temp_dir}')
+        logging.warning (f'Err:Find Images:no path {temp_dir}')
         return (f'no path:{temp_dir}')
 
-def start_threaded_image_search(directoryqueue, data_cache_lock):
+#def start_threaded_image_search(directoryqueue, data_cache_lock):
     # with ThreadPoolExecutor(max_workers = max_threads) as executor:
     #     while not(directory_path_Q.empty()):
     #         try:  # Add try...except block to catch any unexpected errors
@@ -142,20 +144,20 @@ def start_threaded_image_search(directoryqueue, data_cache_lock):
     #             #print (future.result())
     #         except Exception as e:
     #             print(f"Error in start_image_search while loop: {str(e)}")
-    sentinel_encountered = False
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        while not sentinel_encountered:
-            try:
-                temp_dir = directory_path_Q.get()
-            except queue.Empty:
-                time.sleep(0.05)  # If the queue is empty, wait a bit and retry.
-                            #logging.debug(f'popped {temp_dir}')
-            if temp_dir is None:
-                sentinel_encountered = True
-                continue
-            executor.submit(find_images, temp_dir, data_cache_lock)
-    print_image_data_cache(image_data_cache)
-    logging.info (f'found {len(image_data_cache)} images')
+    # sentinel_encountered = False
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+    #     while not sentinel_encountered:
+    #         try:
+    #             temp_dir = directory_path_Q.get()
+    #         except queue.Empty:
+    #             time.sleep(waittime)  # If the queue is empty, wait a bit and retry.
+    #                         #logging.debug(f'popped {temp_dir}')
+    #         if temp_dir is None:
+    #             sentinel_encountered = True
+    #             continue
+    #         executor.submit(find_images, temp_dir, data_cache_lock)
+    # print_image_data_cache(image_data_cache)
+    # logging.info (f'found {len(image_data_cache)} images')
 
 def start_image_search_concurrent(max_threads):
     all_image_data = []
@@ -195,29 +197,29 @@ def start_image_search_threads(max_threads):
             except Exception as exc:
                 if exc == queue.Empty:
                     logging.debug ('image_search_threads:Failed to get path from Q')
-                    time.sleep(.05) #delay to allow the queue to be topped up
+                    time.sleep(waittime) #delay to allow the queue to be topped up
             if temp_dir == None:
                 sentinel_encountered = True
             else:
                 logging.debug (f'thread submission:{temp_dir}')
                 try:
-                    consumer_thread = threading.Thread(target=process_directory, args=(temp_dir, data_cache_lock))
+                    consumer_thread = threading.Thread(target=find_images, args=(temp_dir, threadlock_ref))
                 except Exception as exc: 
                     logging.debug (f'thread submission failed: {temp_dir}: (str)exc))')
                     return
                 threads.append(consumer_thread)
                 consumer_thread.start() 
                 directory_path_Q.task_done()
-                logging.debug (f'image search thread count: {len(threads)}')
+                #logging.debug (f'image search thread count: {len(threads)}')
         else:
             if directory_path_Q.qsize()==0 and counter<max_failed_attempts:
                 counter += 1
-                logging.debug (f'Q empty {counter}')
+                #logging.debug (f'Q empty {counter}')
             elif counter==max_failed_attempts:
                 return
             else:
-                logging.debug (f'thread count>max threads')
-                time.sleep(0.05)
+                #logging.debug (f'thread count>max threads')
+                time.sleep(waittime)
                 
 def start_producer_queue_threads(max_producer_threads):
     sentinel_encountered = False
@@ -231,20 +233,20 @@ def start_producer_queue_threads(max_producer_threads):
             except Exception as exc:
                 if exc == queue.Empty:
                     logging.debug ('ProducerQ_threads:Failed to get path from Q')
-                    time.sleep(.05) #delay to allow the queue to be topped up
+                    time.sleep(waittime) #delay to allow the queue to be topped up
             if temp_dir == None:
                 sentinel_encountered = True
             else:
-                logging.debug (f'ProducerQ thread submission:{temp_dir}')
+                #logging.debug (f'ProducerQ thread submission:{temp_dir}')
                 try:
                     producer_thread = threading.Thread(target=count_directories, args=(directory_path_Q, temp_dir))
                 except Exception as exc: 
-                    logging.debug (f'ProducerQ thread submission failed: {temp_dir}: (str)exc))')
+                    #logging.debug (f'ProducerQ thread submission failed: {temp_dir}: (str)exc))')
                     return
                 threads.append(producer_thread)
                 producer_thread.start() 
                 producer_dir_Q.task_done()
-                logging.debug (f'ProducerQ thread count: {len(threads)}')
+                #logging.debug (f'ProducerQ thread count: {len(threads)}')
         else:
             if directory_path_Q.qsize()==0 and counter<max_failed_attempts:
                 counter += 1
@@ -253,17 +255,14 @@ def start_producer_queue_threads(max_producer_threads):
                 logging.debug ('Producer Q max attempts')
                 return
             else:
-                logging.debug (f'thread count>max threads')
-                time.sleep(0.05)
-    
-
+                #logging.debug (f'thread count>max threads')
+                time.sleep(waittime)
 
 def start():
     master_list = []
 
     for max_producer_threads in maxthreadlist:
         for max_threads in maxthreadlist:
-    
             Starttime = time.time()
             #Source_dir_Q = queue.Queue
 
@@ -274,7 +273,7 @@ def start():
 
             # Starting Consumer Threads
             num_consumer_threads = max_threads  # or any number you prefer
-            time.sleep(.5) #give the producer threads a chance to get ahead enough
+            time.sleep(waittime) #give the producer threads a chance to get ahead enough
             start_image_search_threads (num_consumer_threads)
 
             logging.info (f'found {len(image_data_cache)} images')                
