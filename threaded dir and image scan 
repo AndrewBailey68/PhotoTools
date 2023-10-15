@@ -5,7 +5,10 @@ import queue
 import threading
 import time
 import logging
-logging.basicConfig(level=logging.DEBUG)
+import json
+logging.basicConfig(level=logging.INFO)
+
+output_file = '/Users/andrew/python/PhotoTools/datafile.json'
 
 maxthreadlist = [6]
 
@@ -15,7 +18,7 @@ Starttime = time.time()
 max_producer_threads = 4
 max_threads = 6  # Set the maximum number of threads
 thread_pool = concurrent.futures.ThreadPoolExecutor(max_threads)
-max_failed_attempts = 10
+max_failed_attempts = 100
 
 # Globals
 directory_path_Q = queue.Queue()  # global to contain temp list
@@ -37,10 +40,20 @@ raw_extension_set = {ext.lower() for ext in raw_extensions}
 # test values
 # Source directory where photos are stored
 #pic a test source or a 'real' network one by comments
-Source_list=['/Users/andrew/Desktop/Test Folder For Images']
+#Source_list=['/Users/andrew/Desktop/Test Folder For Images']
+#Source_list = ['/Users/andrew/Desktop']
 #Source_list = ['/Users/andrew/Desktop', '/Users/andrew/Downloads', '/Users/andrew/Printrun', '/Users/andrew/Documents']
-#Source_list = ['/Users/andrew/Desktop/Test Folder For Images','/Volumes/media1/Pictures/Photos','/Volumes/media1/Pictures/Images removed from Photo library vault']
-
+Source_list = ['/Users/andrew/Desktop']
+Source_list.append('/Volumes/media1/Pictures/Ioana Photos and Video')
+Source_list.append ('/Volumes/media1/Pictures/Photos')
+Source_list.append ('/Volumes/media1/Pictures/V2 - Aperture Library - old.photoslibrary_prepare')
+Source_list.append ('/Volumes/media1/Pictures/100GOPRO')
+Source_list.append ('/Volumes/media1/Pictures/Images removed from Photo library vault')
+Source_list.append ('/Volumes/media1/Pictures/Images removed from Ultra6 Vault')
+Source_list.append ('/Volumes/media1/Pictures/Camera Uploads')
+Source_list.append ('/Volumes/media1/Pictures/Camera')
+Source_list.append ('/Volumes/media1/Pictures/Scan 5')
+Source_list.append ('None')
 
 def can_access(path):
     #read permission available?
@@ -51,9 +64,9 @@ def print_image_data_cache(image_data_cache_local):
         logging.debug ("finishing up - Image data cache is empty")
     else:
         logging.debug("Image Data Cache:")
-        if logging.DEBUG:
-            for idx, data in enumerate(image_data_cache, start=1):
-                logging.debug("\n".join([f"Filename: {data['filename']}, Path: {data['path']}"]))
+        for idx, data in enumerate(image_data_cache, start=1):
+            logging.debug("\n".join([f"Filename: {data['filename']}, Path: {data['path']}"]))
+   
     total_size = sum(data.get('size', 0) for data in image_data_cache_local)
     total_size_megabytes = total_size / (1024 * 1024)  # Convert bytes to megabytes
     formatted_size = '{:,.2f}'.format(total_size_megabytes)  # Format with commas and 2 decimal places
@@ -117,15 +130,15 @@ def find_images(temp_dir, threadlock_ref):
                             with threadlock_ref:
                                 #logging.debug(f"Appending data to cache: {filename}")
                                 image_data_cache.append(
-                                    {'filename': filename, 'path': temp_dir, 'size':os.path.getsize(file_path), 'type': file_path.lower})
-                                logging.debug(f"Appended data to cache: {filename}")
+                                    {'filename': filename, 'path': temp_dir, 'size':os.path.getsize(file_path), 'type': os.path.splitext(file_path)[1][1:]})
+                                logging.info(f"{threading.current_thread().name} Appended data to cache: {filename}")
                             image_flag = True  # found at least one image
                     else:   #it's a directory move on
                         pass        
                 #logging.debug(f'Image Search Ended {image_flag} in {temp_dir}')
                 return (f'Success {temp_dir}')
             except:
-                logging.warning ('Err:Find images')
+                logging.warning (f'Err:Find images {temp_dir}')
                 return (f'fail {temp_dir}')
         else:
             logging.warning (f'Err:Find Images:No Access to {temp_dir}')
@@ -134,30 +147,6 @@ def find_images(temp_dir, threadlock_ref):
         logging.warning (f'Err:Find Images:no path {temp_dir}')
         return (f'no path:{temp_dir}')
 
-#def start_threaded_image_search(directoryqueue, data_cache_lock):
-    # with ThreadPoolExecutor(max_workers = max_threads) as executor:
-    #     while not(directory_path_Q.empty()):
-    #         try:  # Add try...except block to catch any unexpected errors
-    #             temp_dir = directory_path_Q.get()
-    #             logging.debug(f"Consuming directory: {directory_path}")
-    #             future = executor.submit(find_images, temp_dir, data_cache_lock)
-    #             #print (future.result())
-    #         except Exception as e:
-    #             print(f"Error in start_image_search while loop: {str(e)}")
-    # sentinel_encountered = False
-    # with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-    #     while not sentinel_encountered:
-    #         try:
-    #             temp_dir = directory_path_Q.get()
-    #         except queue.Empty:
-    #             time.sleep(waittime)  # If the queue is empty, wait a bit and retry.
-    #                         #logging.debug(f'popped {temp_dir}')
-    #         if temp_dir is None:
-    #             sentinel_encountered = True
-    #             continue
-    #         executor.submit(find_images, temp_dir, data_cache_lock)
-    # print_image_data_cache(image_data_cache)
-    # logging.info (f'found {len(image_data_cache)} images')
 
 def start_image_search_concurrent(max_threads):
     all_image_data = []
@@ -203,7 +192,7 @@ def start_image_search_threads(max_threads):
             else:
                 logging.debug (f'thread submission:{temp_dir}')
                 try:
-                    consumer_thread = threading.Thread(target=find_images, args=(temp_dir, threadlock_ref))
+                    consumer_thread = threading.Thread(target=find_images, args=(temp_dir, data_cache_lock))
                 except Exception as exc: 
                     logging.debug (f'thread submission failed: {temp_dir}: (str)exc))')
                     return
@@ -227,26 +216,27 @@ def start_producer_queue_threads(max_producer_threads):
     threads = []
     while not (sentinel_encountered):
         threads = [t for t in threads if t.is_alive()]  #thread cleanup
-        if len(threads)< max_producer_threads and producer_dir_Q.qsize()>0:
+        if len(threads)< max_producer_threads and producer_dir_Q.qsize()>0: #alive threads <max? Work to do?
             try:
-                temp_dir = producer_dir_Q.get(timeout=0.1)
+                temp_dir = producer_dir_Q.get(timeout=0.1)  #get the next item
+                if temp_dir == 'none' or temp_dir == 'None' or temp_dir == None: #did we reach the end? Note potential error condition if producer_dir_Q.get() doesn't get anything.
+                    logging.info ('Source dir list sent to threads')
+                    sentinel_encountered = True
             except Exception as exc:
                 if exc == queue.Empty:
                     logging.debug ('ProducerQ_threads:Failed to get path from Q')
                     time.sleep(waittime) #delay to allow the queue to be topped up
-            if temp_dir == None:
-                sentinel_encountered = True
             else:
-                #logging.debug (f'ProducerQ thread submission:{temp_dir}')
+                logging.debug (f'ProducerQ thread submission:{temp_dir}')
                 try:
                     producer_thread = threading.Thread(target=count_directories, args=(directory_path_Q, temp_dir))
                 except Exception as exc: 
-                    #logging.debug (f'ProducerQ thread submission failed: {temp_dir}: (str)exc))')
+                    logging.debug (f'ProducerQ thread submission failed: {temp_dir}: (str)exc))')
                     return
                 threads.append(producer_thread)
                 producer_thread.start() 
-                producer_dir_Q.task_done()
-                #logging.debug (f'ProducerQ thread count: {len(threads)}')
+                #producer_dir_Q.task_done()
+                logging.debug (f'ProducerQ thread count: {len(threads)}')
         else:
             if directory_path_Q.qsize()==0 and counter<max_failed_attempts:
                 counter += 1
@@ -257,6 +247,22 @@ def start_producer_queue_threads(max_producer_threads):
             else:
                 #logging.debug (f'thread count>max threads')
                 time.sleep(waittime)
+
+def handle_non_serializable(obj):
+    if callable(obj):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+def write_list_of_ngram_dicts(list_of_dicts, filename):
+    with open(filename, 'w', encoding='utf-8') as file:
+        for dic in list_of_dicts:
+        
+            data=json.dumps(dic) 
+            file.write(data)
+            file.write("\n")
+    file.close
+    while not(file.closed):
+        time.sleep(waittime)
 
 def start():
     master_list = []
@@ -278,10 +284,11 @@ def start():
 
             logging.info (f'found {len(image_data_cache)} images')                
             print_image_data_cache(image_data_cache)
-            master_list = deduplicate_image_cache(image_data_cache)
-            print_image_data_cache(master_list)
             ElapsedTime = time.time() - Starttime
             logging.info(f'{max_producer_threads} producer {max_threads} image Threads : {ElapsedTime} s')
-
-
+            
 start()
+master_list = deduplicate_image_cache(image_data_cache)
+print_image_data_cache(master_list)
+image_data_cache = master_list
+write_list_of_ngram_dicts(image_data_cache, output_file)
