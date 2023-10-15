@@ -45,19 +45,21 @@ raw_extension_set = {ext.lower() for ext in raw_extensions}
 #Source_list=['/Users/andrew/Desktop/Test Folder For Images']
 #Source_list = ['/Users/andrew/Desktop', '/Users/andrew/Downloads', '/Users/andrew/Printrun', '/Users/andrew/Documents']
 Source_list = ['/Users/andrew/Desktop']
-Source_list.append('/Volumes/media1/Pictures/Ioana Photos and Video')
-Source_list.append ('/Volumes/media1/Pictures/Photos')
-Source_list.append ('/Volumes/media1/Pictures/V2 - Aperture Library - old.photoslibrary_prepare')
-Source_list.append ('/Volumes/media1/Pictures/100GOPRO')
-Source_list.append ('/Volumes/media1/Pictures/Images removed from Photo library vault')
-Source_list.append ('/Volumes/media1/Pictures/Images removed from Ultra6 Vault')
-Source_list.append ('/Volumes/media1/Pictures/Camera Uploads')
-Source_list.append ('/Volumes/media1/Pictures/Camera')
-Source_list.append ('/Volumes/media1/Pictures/Scan 5')
-Source_list.append ('/Volumes/media1/Pictures/V2 - Aperture Library - old')
-Source_list.append ('/Volumes/media1/Documents/V2 - Aperture Library - OLD BACKUP')
-Source_list.append ('/Volumes/media1/Documents/Andrew')
-Source_list.append ('/Volumes/media1/Documents/Test LR Library')
+Source_list.append('/Volumes/media1/Pictures/')
+Source_list.append ('/Volumes/media1/Documents/')
+# Source_list.append('/Volumes/media1/Pictures/Ioana Photos and Video')
+# Source_list.append ('/Volumes/media1/Pictures/Photos')
+# Source_list.append ('/Volumes/media1/Pictures/V2 - Aperture Library - old.photoslibrary_prepare')
+# Source_list.append ('/Volumes/media1/Pictures/100GOPRO')
+# Source_list.append ('/Volumes/media1/Pictures/Images removed from Photo library vault')
+# Source_list.append ('/Volumes/media1/Pictures/Images removed from Ultra6 Vault')
+# Source_list.append ('/Volumes/media1/Pictures/Camera Uploads')
+# Source_list.append ('/Volumes/media1/Pictures/Camera')
+# Source_list.append ('/Volumes/media1/Pictures/Scan 5')
+# Source_list.append ('/Volumes/media1/Pictures/V2 - Aperture Library - old.aplibrary')
+# Source_list.append ('/Volumes/media1/Documents/V2 - Aperture Library - OLD BACKUP.aplibrary')
+# Source_list.append ('/Volumes/media1/Documents/Andrew')
+# Source_list.append ('/Volumes/media1/Documents/Test LR Library')
 Source_list.append ('None')
 
 def can_access(path):
@@ -99,6 +101,7 @@ def deduplicate_image_cache(image_data_to_dedupe):
 def count_directories(directoryqueue, root_directory):
     global Dir_Found_Count  
     count = 0
+    logging.debug (f'Searching dir {root_directory}')
     for current_root, dirs, _ in os.walk(root_directory):
         count += len(dirs)
         for dir_name in dirs:
@@ -290,6 +293,7 @@ def start():
 
             for source_dir in Source_list: #start some producers
                 producer_dir_Q.put(source_dir)
+                logging.debug (f'Added {source_dir} to Q. Q length {producer_dir_Q.qsize()}')
             producer_dir_Q.put(None)
             start_producer_queue_threads(max_producer_threads)
 
