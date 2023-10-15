@@ -41,7 +41,6 @@ raw_extension_set = {ext.lower() for ext in raw_extensions}
 # Source directory where photos are stored
 #pic a test source or a 'real' network one by comments
 #Source_list=['/Users/andrew/Desktop/Test Folder For Images']
-#Source_list = ['/Users/andrew/Desktop']
 #Source_list = ['/Users/andrew/Desktop', '/Users/andrew/Downloads', '/Users/andrew/Printrun', '/Users/andrew/Documents']
 Source_list = ['/Users/andrew/Desktop']
 Source_list.append('/Volumes/media1/Pictures/Ioana Photos and Video')
